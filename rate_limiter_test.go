@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -53,6 +54,20 @@ func (suite *RateLimiterTestSuite) TestTokenBucket() {
 
 	suite.Run("Denies Over Limit", func() {
 		allowed, err := limiter.Allow(suite.ctx, id)
+		suite.Require().NoError(err)
+		suite.False(allowed)
+	})
+
+	suite.Run("Allows After Refill", func() {
+		// Wait for bucket to be refilled (refillRate is 1)
+		time.Sleep(1 * time.Second)
+
+		allowed, err := limiter.Allow(suite.ctx, id)
+		suite.Require().NoError(err)
+		suite.True(allowed)
+
+		// Next request should be denied
+		allowed, err = limiter.Allow(suite.ctx, id)
 		suite.Require().NoError(err)
 		suite.False(allowed)
 	})
