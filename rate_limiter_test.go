@@ -35,6 +35,10 @@ func (suite *RateLimiterTestSuite) TearDownSuite() {
 	suite.redisClient.Close()
 }
 
+func (suite *RateLimiterTestSuite) SetupTest() {
+	suite.redisClient.FlushAll(suite.ctx)
+}
+
 func (suite *RateLimiterTestSuite) TestTokenBucket() {
 	limiter := &TokenBucket{
 		redisClient: suite.redisClient,
@@ -59,6 +63,44 @@ func (suite *RateLimiterTestSuite) TestTokenBucket() {
 	})
 
 	suite.Run("Allows After Refill", func() {
+		// Wait for bucket to be refilled (refillRate is 1)
+		time.Sleep(1 * time.Second)
+
+		allowed, err := limiter.Allow(suite.ctx, id)
+		suite.Require().NoError(err)
+		suite.True(allowed)
+
+		// Next request should be denied
+		allowed, err = limiter.Allow(suite.ctx, id)
+		suite.Require().NoError(err)
+		suite.False(allowed)
+	})
+}
+
+func (suite *RateLimiterTestSuite) TestLeakingBucket() {
+	limiter := &LeakingBucket{
+		redisClient: suite.redisClient,
+		bucketSize:  5,
+		outflowRate: 1,
+	}
+
+	id := "random"
+
+	suite.Run("Allows Within Limit", func() {
+		for i := 0; i < 5; i++ {
+			allowed, err := limiter.Allow(suite.ctx, id)
+			suite.Require().NoError(err)
+			suite.True(allowed)
+		}
+	})
+
+	suite.Run("Denies Over Limit", func() {
+		allowed, err := limiter.Allow(suite.ctx, id)
+		suite.Require().NoError(err)
+		suite.False(allowed)
+	})
+
+	suite.Run("Allows After Leak", func() {
 		// Wait for bucket to be refilled (refillRate is 1)
 		time.Sleep(1 * time.Second)
 
